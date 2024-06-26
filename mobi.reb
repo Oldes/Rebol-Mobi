@@ -177,9 +177,8 @@ register-codec [
 			;; MOBI header....
 			s: index? bin/buffer
 			length: binary/read bin 'UI32
-			? length
 
-			set result/mobi probe binary/read bin compose [
+			set result/mobi binary/read bin compose [
 				UI32     ;; type
 				UI32     ;; encoding
 				UI32     ;; unique-id
@@ -241,7 +240,7 @@ register-codec [
 				][])
 			]
 			? result/mobi
-			print ["Mobi len:" (index? bin/buffer) - s]
+			;print ["Mobi len:" (index? bin/buffer) - s]
 		]
 		bin/buffer: atz head bin/buffer (record0-offset + 16 + length)
 		if 0#45585448 == binary/read bin 'UI32 [
@@ -263,6 +262,7 @@ register-codec [
 				printf [-4 SP 22 ": "] data
 				append exth new-line data true
 			]
+			print ""
 		]
 
 		try [
@@ -276,7 +276,7 @@ register-codec [
 			len: record-list/4 - ofs
 			binary/read bin [ATz :ofs srcs: UI32]
 			if srcs = 0#53524353 [
-				probe binary/read bin [UI32 UI32 UI32]
+				binary/read bin [UI32 UI32 UI32]
 				result/srcs: srcs: binary/read bin (len - 16)
 				try [result/srcs: system/codecs/zip/decode srcs]
 			]
@@ -288,11 +288,11 @@ register-codec [
 			ofs: record-list/1
 			len: record-list/4 - ofs
 			binary/read bin [ATz :ofs image: BYTES :len]
-			result/image: any [
-				sys/decode 'jpeg image
-				sys/decode 'png  image
-				sys/decode 'gif  image
-			]
+			result/image: switch/default binary/read image 'UI16BE [
+				0#ffd8 [sys/decode 'jpeg image]
+				0#8950 [sys/decode 'png  image]
+				0#4749 [sys/decode 'gif  image]
+			][ image ]
 		]] :print
 
 		;; Decompress the text...
@@ -304,10 +304,10 @@ register-codec [
 			append/part result/text decompress-palmdoc atz head bin/buffer :ofs :len 4096
 			record-list: skip record-list 3
 		]
-		while [not tail? record-list: skip record-list 3] [		
-			prin [record-list/3 >> 1 record-list/1 TAB]
-			probe to-string copy/part atz head bin/buffer record-list/1 4
-		]
+		;while [not tail? record-list: skip record-list 3] [		
+		;	prin [record-list/3 >> 1 record-list/1 TAB]
+		;	probe to-string copy/part atz head bin/buffer record-list/1 4
+		;]
 
 		result
 	]
