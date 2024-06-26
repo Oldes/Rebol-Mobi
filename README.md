@@ -11,3 +11,5 @@ MobiPocket/Kindle eBook `mobi` file codec for the [Rebol](https://github.com/Old
 import %mobi.reb
 data: load %path/to/book.mobi
 ```
+
+![Screenshot](https://matrix-client.matrix.org/_matrix/media/v3/download/matrix.org/besDNKhrvpGvkhkgFckPifoG?allow_redirect=true)
