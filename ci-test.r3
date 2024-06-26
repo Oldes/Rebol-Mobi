@@ -1,4 +1,4 @@
-Rebol [title: "WebDriver scheme test"]
+Rebol [title: "MOBI codec CI test"]
 
 system/options/quiet: false
 system/options/log/rebol: 4
