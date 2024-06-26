@@ -18,6 +18,7 @@ Rebol [
 		* https://metacpan.org/dist/EBook-Tools/source/lib/EBook/Tools/PalmDoc.pm
 		* https://github.com/ywzhaiqi/MyKindleTools/tree/master/kindleunpack
 	}
+	Needs: 3.11.0 ;; used hexadecimal and bit integer notation
 ]
 
 ;@@ TODO: replace `object!` headers with `struct!` datatype when it is mature enough?

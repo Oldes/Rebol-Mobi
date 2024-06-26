@@ -3,7 +3,7 @@
 
 # Rebol/Mobi
 
-MobiPocket/Kindle eBook `mobi` file codec for the [Rebol](https://github.com/Oldes/Rebol3) programming language.
+MobiPocket/Kindle eBook `mobi` file codec for the [Rebol](https://github.com/Oldes/Rebol3) (version 3.11.0 and newer) programming language.
 
 # Usage example
 
