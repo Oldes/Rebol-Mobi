@@ -55,6 +55,25 @@ check "open missing file"   all [error? e  e/id = 'cannot-open  e/arg1 = %missin
 e: try [open [scheme: 'mobi]]
 check "open without path"   all [error? e  e/id = 'invalid-arg]
 
+;; minimal plain PalmDOC file (no MOBI header): record 0, one text record and an end record
+plain: append/dup #{} 0 32
+change plain "Synth"
+binary/write tmp: copy #{} [
+	UI16 0 UI16 0 UI32 0 UI32 0 UI32 0 UI32 0 UI32 0 UI32 0
+	BYTES #{54455874} BYTES #{52454164} UI32 0 UI32 0 UI16 3 ;; TEXt REAd, 3 records
+	UI32 104 UI32 0  UI32 120 UI32 1  UI32 125 UI32 2  UI16 0
+	UI16 1 UI16 0 UI32 5 UI16 1 UI16 4096 UI32 0 ;; uncompressed, 5 bytes in 1 record
+	BYTES #{48656C6C6F} BYTES #{E98E0D0A}        ;; "Hello" + end record
+]
+append plain tmp
+write %plain-test.pdb plain
+e: try [data: decode 'mobi %plain-test.pdb]
+check "plain PalmDOC codec"  all [not error? e  "Hello" == to string! data/text  none? data/mobi]
+e: try [book: open [scheme: 'mobi path: %plain-test.pdb]]
+check "plain PalmDOC scheme" all [not error? e  "Hello" == read/string book  "Synth" == query book 'Name]
+try [close book]
+delete %plain-test.pdb
+
 if failed? [quit/return -4]
 
 foreach [file url] [

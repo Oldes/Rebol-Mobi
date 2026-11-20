@@ -47,20 +47,24 @@ register-codec [
 		;? result/pdb
 		check-compression result/pdb/compression
 
-		if 0#4D4F4249 == binary/read bin 'UI32 [
+		;; plain PalmDOC files have no MOBI header (record 0 has only the PDB header)
+		if all [
+			24 <= (records/4 - record0-offset)
+			0#4D4F4249 == binary/read bin 'UI32
+		][
 			;; MOBI header....
 			length: binary/read bin 'UI32
 			result/mobi: read-mobi-header bin length
 			;? result/mobi
-		]
-		bin/buffer: atz head bin/buffer (record0-offset + 16 + length)
-		if 0#45585448 == binary/read bin 'UI32 [
-			;; EXTH header....
-			binary/read bin [
-				length: UI32
-				count:  UI32 ;; The number of records in the EXTH header.
+			bin/buffer: atz head bin/buffer (record0-offset + 16 + length)
+			if 0#45585448 == binary/read bin 'UI32 [
+				;; EXTH header....
+				binary/read bin [
+					length: UI32
+					count:  UI32 ;; The number of records in the EXTH header.
+				]
+				result/exth: read-exth-header bin count
 			]
-			result/exth: read-exth-header bin count
 		]
 
 		try [
@@ -81,7 +85,7 @@ register-codec [
 			
 		]]
 
-		try/with [if result/mobi/image-index [
+		try/with [if all [result/mobi result/mobi/image-index] [
 			records: skip head records 3 * result/mobi/image-index
 			either 4 > length? records [
 				sys/log/more 'MOBI "image-index value out of range!"
@@ -569,15 +573,19 @@ sys/make-scheme [
 				buffer:  read/seek/part file records/1 24
 				pdb: read-pdb-header buffer
 				binary/read buffer [ATz 16 id: UI32 length: UI32]
-				if id == 0#4D4F4249 [ ;= MOBI
+				;; plain PalmDOC files have no MOBI header (record 0 has only the PDB header)
+				if all [
+					24 <= (records/4 - records/1)
+					id == 0#4D4F4249 ;= MOBI
+				][
 					buffer: read/part file length
 					mobi: read-mobi-header buffer length
-				]
-				buffer:  read/seek/part file (records/1 + 16 + length) 12
-				binary/read buffer [id: UI32 length: UI32 count: UI32]
-				if id == 0#45585448 [ ;= EXTH
-					buffer: read/part file length
-					exth: read-exth-header buffer count
+					buffer:  read/seek/part file (records/1 + 16 + length) 12
+					binary/read buffer [id: UI32 length: UI32 count: UI32]
+					if id == 0#45585448 [ ;= EXTH
+						buffer: read/part file length
+						exth: read-exth-header buffer count
+					]
 				]
 				try [
 					name: to string! trim/tail read/seek/part file (records/1 + mobi/fullname-offset) mobi/fullname-length
