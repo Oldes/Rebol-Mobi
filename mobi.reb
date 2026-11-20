@@ -45,9 +45,7 @@ register-codec [
 		binary/read/with bin 'ATz record0-offset: records/1
 		result/pdb: read-pdb-header bin
 		;? result/pdb
-		if result/pdb/compression <> 2 [
-			do make error! ajoin ["[MOBI] Unsupported compression type: " result/pdb/compression]
-		]
+		check-compression result/pdb/compression
 
 		if 0#4D4F4249 == binary/read bin 'UI32 [
 			;; MOBI header....
@@ -109,7 +107,7 @@ register-codec [
 			buffer: atz head bin/buffer :ofs
 			;; ignore extra data at the end of the record
 			len: len - trailing-entries-size :buffer :len :flags
-			append result/text decompress-palmdoc/part :buffer :len
+			append result/text decode-text-record :buffer :len result/pdb/compression
 			records: skip records 3
 		]
 		;while [not tail? records: skip records 3] [		
@@ -171,6 +169,26 @@ decompress-palmdoc: function[
 		]
 	]
 	out
+]
+
+check-compression: func[
+	"Throws an error if the text compression type is not supported"
+	type [integer!] "1 = no compression, 2 = PalmDOC, 17480 = HUFF/CDIC"
+][
+	unless find [1 2] type [
+		do make error! ajoin ["[MOBI] Unsupported compression type: " type]
+	]
+]
+
+decode-text-record: func[
+	"Returns decoded content of a text record"
+	rec  [binary!]  "Text record data"
+	len  [integer!] "Number of bytes to decode (without trailing entries)"
+	type [integer!] "Compression type (1 or 2; see check-compression)"
+][
+	either type == 1 [
+		copy/part rec len
+	][	decompress-palmdoc/part rec len ]
 ]
 
 trailing-entries-size: function [
@@ -661,6 +679,7 @@ sys/make-scheme [
 				text: state/text
 			][
 				;; Decompress the text...
+				check-compression state/pdb/compression
 				file: port/parent
 				limit: either part [length][state/pdb/text-length]
 				text: make binary! limit
@@ -672,7 +691,7 @@ sys/make-scheme [
 					buffer: read/seek/part file records/1 len
 					;; ignore extra data at the end of the record
 					len: len - trailing-entries-size buffer len flags
-					append text decompress-palmdoc/part buffer len
+					append text decode-text-record buffer len state/pdb/compression
 					records: skip records 3
 					if limit <= length? text [ break ]
 				]

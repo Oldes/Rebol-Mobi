@@ -43,6 +43,13 @@ check "trailing both"       4 = trailing-entries-size #{41 42 43 61 01 AA 82} 7 
 check "trailing two"        2 = trailing-entries-size #{41 42 43 81 81} 5 6
 check "trailing long"     130 = trailing-entries-size append append/dup #{} 0 128 #{81 02} 130 2
 
+decode-text-record: :system/modules/mobi/decode-text-record
+check-compression:  :system/modules/mobi/check-compression
+check "record uncompressed" #{0102C1} = decode-text-record #{01 02 C1 FF} 3 1
+check "record palmdoc"      #{2041}   = copy decode-text-record #{C1 FF} 1 2
+check "compression 1 and 2" not any [error? try [check-compression 1] error? try [check-compression 2]]
+check "compression HUFF"    error? try [check-compression 17480]
+
 e: try [open [scheme: 'mobi path: %missing.mobi]]
 check "open missing file"   all [error? e  e/id = 'cannot-open  e/arg1 = %missing.mobi]
 e: try [open [scheme: 'mobi]]
