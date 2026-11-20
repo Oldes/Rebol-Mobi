@@ -172,8 +172,8 @@ check "encode unknown exth" error? try [encode 'mobi object [text: "x" exth: [Fo
 if failed? [quit/return -4]
 
 foreach [file url] [
-	%RUR.v1.mobi https://www.gutenberg.org/ebooks/13083.kindle.images
-	%RUR.v2.mobi https://www.gutenberg.org/ebooks/13083.kf8.images
+	%books/RUR.v1.mobi https://www.gutenberg.org/ebooks/13083.kindle.images
+	%books/RUR.v2.mobi https://www.gutenberg.org/ebooks/13083.kf8.images
 ][
 	print-hline
 	if not exists? file [
