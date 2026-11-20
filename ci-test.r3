@@ -138,6 +138,37 @@ check "plain PalmDOC scheme" all [not error? e  "Hello" == read/string book  "Sy
 try [close book]
 delete %plain-test.pdb
 
+;; encoder
+html: make string! 40000
+repeat i 300 [append html ajoin [{<p>} i {: Příliš žluťoučký kůň úpěl ďábelské ódy.</p>^/}]]
+cover: #{47494638 39610100 01008000 00000000 FFFFFF21 F9040100 0000002C 00000000 01000100 00020244 01003B} ;; 1x1 GIF
+bin: encode 'mobi object [
+	name:  "Žluťoučký kůň"
+	text:  html
+	exth:  [Author "Oldes" Publisher: "Rebol" 524 Language "cs"]
+	image: cover
+]
+data: decode 'mobi bin
+check "encode text"        html == to string! data/text
+check "encode name"        "Žluťoučký kůň" == data/name
+check "encode exth pairs"  all ["Oldes" == select data/exth 'Author  "Rebol" == select data/exth 'Publisher]
+check "encode exth triplet" "cs" == select data/exth 'Language
+span: record-span data/records cover-index data/mobi data/exth
+check "encode cover"       all [0 = select data/exth 'Coveroffset  cover == copy/part at bin (span/1 + 1) span/2]
+write %encode-test.mobi bin
+book: open [scheme: 'mobi path: %encode-test.mobi]
+check "encode scheme text" html == read/string book
+check "encode scheme name" "Žluťoučký kůň" == query book 'Name
+close book
+delete %encode-test.mobi
+;; a multibyte char split between the 1st and the 2nd text record
+str: append append/dup make string! 4096 #"a" 4095 "žžž"
+data: decode 'mobi encode 'mobi object [text: str]
+check "encode split char"  all [str == to string! data/text  "Untitled" == data/name]
+data: decode 'mobi encode 'mobi make map! [name: "Empty" text: ""]
+check "encode empty"       all [empty? data/text  "Empty" == data/name]
+check "encode unknown exth" error? try [encode 'mobi object [text: "x" exth: [Foo "x"]]]
+
 if failed? [quit/return -4]
 
 foreach [file url] [

@@ -124,6 +124,215 @@ register-codec [
 
 		result
 	]
+
+	encode: function [
+		"Encode an ebook into the MOBI file format"
+		data [object! map!] "Fields: name, text, exth, image and locale (see README)"
+		/local type key value
+	][
+		;; book name
+		name: to binary! form any [select data 'name "Untitled"]
+		;; text (usually HTML) as UTF-8
+		text: select data 'text
+		text: either string? text [to binary! text][any [text #{}]]
+		;; cover image data
+		if image: select data 'image [
+			if file?  image [image: read image]
+			if image? image [image: sys/encode 'png image]
+		]
+
+		;; Text records (4096 bytes of uncompressed text each)
+		records: make block! 8 + ((length? text) / 4096)
+		append records #{} ;; record 0 (filled at the end)
+		pos: text
+		while [not tail? pos][
+			chunk: copy/part pos 4096
+			pos: skip pos 4096
+			;; trailing multibyte entry: continuation bytes of a char split between records
+			overlap: copy/part pos 3
+			n: 0
+			while [all [n < length? overlap  2#10000000 == (overlap/(n + 1) & 2#11000000)]][++ n]
+			clear skip overlap n
+			rec: compress-palmdoc chunk
+			append append rec overlap n
+			append records rec
+		]
+		text-count: (length? records) - 1
+
+		;; Resource records
+		first-non-book: length? records
+		either image [
+			image-index: length? records
+			append records image
+		][	image-index: -1 ]
+		last-content: (length? records) - 1
+		flis-index: length? records
+		append records #{464C4953 00000008 00410000 00000000 FFFFFFFF 00010003 00000003 00000001 FFFFFFFF}
+		fcis-index: length? records
+		text-length: length? text
+		binary/write fcis: binary 44 [
+			BYTES #{46434953 00000014 00000010 00000001 00000000}
+			UI32  :text-length
+			BYTES #{00000000 00000020 00000008 00010001 00000000}
+		]
+		append records fcis/buffer
+		append records #{E98E0D0A} ;; end of file
+
+		;; EXTH header
+		exth: binary 512
+		count: 0
+		add-exth: func[type [integer!] value][
+			value: case [
+				integer? value [binary/write tmp: binary 4 [UI32 :value] tmp/buffer]
+				binary?  value [value]
+				'else [to binary! form value]
+			]
+			size: 8 + length? value
+			binary/write exth [UI32 :type UI32 :size BYTES :value]
+			++ count
+		]
+		;; input can be [type name value] triplets (as from decode) or [name value] pairs
+		parse any [select data 'exth []] [any [
+			  set type integer! [word! | set-word!] set value skip (add-exth type value)
+			| set key [word! | set-word!] set value skip (add-exth exth-type-of key value)
+		]]
+		if all [image  not find-exth-type data 201] [add-exth 201 0] ;; Coveroffset
+		exth: exth/buffer
+		exth-length: 12 + length? exth
+		exth-pad: (4 - (exth-length % 4)) % 4
+		name-offset: 16 + 232 + exth-length + exth-pad
+
+		;; Record 0: PalmDOC header, MOBI header, EXTH header and full name
+		unique-id:      random 2147483647
+		locale:         any [select data 'locale 9] ;; 9 = English
+		name-length:    length? name
+		unknown-1:      append/dup make binary! 32 0 32
+		exth-pad-bytes: append/dup make binary! 32 0 exth-pad
+		name-pad-bytes: append/dup make binary! 32 0 (2 + ((4 - ((name-length + 2) % 4)) % 4))
+		binary/write r0: binary 1024 [
+			;; PalmDOC header
+			UI16  2                     ;; PalmDOC compression
+			UI16  0                     ;; unused
+			UI32  :text-length
+			UI16  :text-count
+			UI16  4096                  ;; record size
+			UI16  0                     ;; encryption
+			UI16  0                     ;; unknown
+			;; MOBI header
+			BYTES #{4D4F4249}           ;; MOBI
+			UI32  232                   ;; header length
+			UI32  2                     ;; type: book
+			UI32  65001                 ;; encoding: UTF-8
+			UI32  :unique-id
+			UI32  6                     ;; file version
+			UI32  -1 UI32 -1 UI32 -1 UI32 -1 ;; orth, infl, names and keys indexes
+			UI32  -1 UI32 -1 UI32 -1 UI32 -1 UI32 -1 UI32 -1 ;; extra indexes
+			UI32  :first-non-book
+			UI32  :name-offset
+			UI32  :name-length
+			UI32  :locale
+			UI32  0                     ;; input language
+			UI32  0                     ;; output language
+			UI32  6                     ;; min version
+			UI32  :image-index          ;; first image
+			UI32  0 UI32 0 UI32 0 UI32 0 ;; huffman record offset, count, table offset, length
+			UI32  0#50                  ;; EXTH flags (0x40 = has EXTH)
+			BYTES :unknown-1            ;; 32 zero bytes
+			UI32  -1                    ;; unknown
+			UI32  -1                    ;; DRM offset
+			UI32  -1                    ;; DRM count
+			UI32  0                     ;; DRM size
+			UI32  0                     ;; DRM flags
+			UI64  0                     ;; unknown
+			UI16  1                     ;; first content record
+			UI16  :last-content
+			UI32  1                     ;; unknown
+			UI32  :fcis-index
+			UI32  1                     ;; FCIS count
+			UI32  :flis-index
+			UI32  1                     ;; FLIS count
+			UI64  0                     ;; unknown
+			UI32  -1                    ;; SRCS index
+			UI32  0                     ;; first compilation data section count
+			UI32  -1                    ;; number of compilation data sections
+			UI32  -1                    ;; unknown
+			UI32  1                     ;; extra record data flags (multibyte overlap)
+			UI32  -1                    ;; INDX record
+			;; EXTH header
+			BYTES #{45585448}           ;; EXTH
+			UI32  :exth-length
+			UI32  :count
+			BYTES :exth
+			BYTES :exth-pad-bytes
+			;; full name followed by 2 zero bytes and padding to 4 bytes
+			BYTES :name
+			BYTES :name-pad-bytes
+		]
+		records/1: r0/buffer
+
+		;; Palm database header and record list
+		count: length? records
+		palm-name: copy/part name 31
+		forall palm-name [ ;; only ASCII printable chars, no spaces
+			if any [palm-name/1 <= 32  palm-name/1 >= 127] [palm-name/1: #"_"]
+		]
+		palm-name: head append/dup palm-name 0 (32 - length? palm-name)
+		time: to integer! now
+		size: 78 + (8 * count) + 2
+		foreach rec records [size: size + length? rec]
+		out: binary size
+		seed: (2 * count) - 1
+		binary/write out [
+			BYTES :palm-name
+			UI16  0                     ;; attributes
+			UI16  0                     ;; version
+			UI32  :time                 ;; created
+			UI32  :time                 ;; modified
+			UI32  0                     ;; backuped
+			UI32  0                     ;; modification number
+			UI32  0                     ;; app info
+			UI32  0                     ;; sort info
+			BYTES #{424F4F4B}           ;; BOOK
+			BYTES #{4D4F4249}           ;; MOBI
+			UI32  :seed                 ;; unique ID seed
+			UI32  0                     ;; next record list
+			UI16  :count
+		]
+		ofs: 78 + (8 * count) + 2
+		id: 0
+		foreach rec records [
+			binary/write out [UI32 :ofs UI8 0 UI24 :id]
+			ofs: ofs + length? rec
+			id: id + 2
+		]
+		binary/write out [UI16 0]
+		foreach rec records [binary/write out [BYTES :rec]]
+		out/buffer
+	]
+]
+
+exth-type-of: function [
+	"Returns EXTH record type number for the given name"
+	name [word! set-word!]
+][
+	name: to word! name
+	foreach [type spec] EXTH_RECORD_TYPE [
+		if name = spec/2 [return type]
+	]
+	do make error! ajoin ["[MOBI] Unknown EXTH record name: " name]
+]
+
+find-exth-type: function [
+	"Returns true if the input EXTH data contains the given record type"
+	data [object! map!]
+	type [integer!]
+	/local t key
+][
+	parse any [select data 'exth []] [any [
+		  set t integer! [word! | set-word!] skip (if t == type [return true])
+		| set key [word! | set-word!] skip (if type == exth-type-of key [return true])
+	]]
+	false
 ]
 
 decompress-palmdoc: function[

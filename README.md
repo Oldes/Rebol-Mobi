@@ -7,7 +7,7 @@
 
 # Rebol/Mobi
 
-MobiPocket/Kindle eBook `mobi` file codec and scheme for the [Rebol](https://github.com/Oldes/Rebol3) (version 3.16.0 and newer) programming language.
+MobiPocket/Kindle eBook `mobi` file codec (decoder and encoder) and scheme for the [Rebol](https://github.com/Oldes/Rebol3) (version 3.16.0 and newer) programming language.
 
 ## Supported
 
@@ -51,6 +51,22 @@ The result is an object with these fields:
 | `srcs`    | embedded source archive (if present)                      |
 
 To get the text as a string, use `to string! data/text` (for CP1252 books `iconv data/text 1252`).
+
+### Encoder
+
+A book can be created from an object (or map) with these fields:
+```rebol
+bin: encode 'mobi object [
+	name:   "My Book"                       ;; full name of the book
+	text:   "<html><body><p>Hello!</p></body></html>" ;; string! or binary! (UTF-8)
+	exth:   [Author "Me" Publisher "Rebol"] ;; name/value pairs or [type name value] triplets
+	image:  %cover.jpg                      ;; optional cover: JPEG/PNG/GIF data, file! or image!
+	locale: 9                               ;; optional book locale code (default 9 = English)
+]
+write %my-book.mobi bin
+```
+The output is a MOBI 6 file with UTF-8 encoded, PalmDOC compressed text (the structure follows Calibre's MOBI writer; tested with KindleUnpack).
+The text should be HTML; it is stored as it is.
 
 ### Scheme
 
