@@ -38,6 +38,26 @@ check "palmdoc overlap"     #{616161616161} = copy decompress-palmdoc #{61 80 0A
 check "palmdoc distance 0"  error? try [decompress-palmdoc #{61 80 00}]
 check "palmdoc distance >"  error? try [decompress-palmdoc #{61 80 10}]
 
+compress-palmdoc: :system/modules/mobi/compress-palmdoc
+round-trip?: func[data][data == copy decompress-palmdoc compress-palmdoc data]
+check "compress space+char" #{C1}           = compress-palmdoc #{20 41}
+check "compress pair"       #{61626380 18}  = compress-palmdoc #{61 62 63 61 62 63}
+check "compress overlap"    #{61800F 6161}  = compress-palmdoc #{61616161616161616161616161}
+check "compress raw bytes"  #{03 80 C1 01 41} = compress-palmdoc #{80 C1 01 41}
+check "compress empty"      round-trip? #{}
+check "compress text"       round-trip? to binary! {<p>Příliš žluťoučký kůň úpěl ďábelské ódy. Příliš žluťoučký!</p>}
+random/seed 1
+ok: true
+loop 50 [
+	b: make binary! 4096
+	loop random 4096 [append b -1 + random 256]
+	unless round-trip? b [ok: false]
+	b: make binary! 4096
+	loop random 4096 [append b pick "ab c dE" random 7]
+	unless round-trip? b [ok: false]
+]
+check "compress random"     ok
+
 check "trailing none"       0 = trailing-entries-size #{41 42 43} 3 0
 check "trailing entry"      1 = trailing-entries-size #{41 42 43 81} 4 2
 check "trailing 3 bytes"    3 = trailing-entries-size #{41 42 43 AA BB 83} 6 2

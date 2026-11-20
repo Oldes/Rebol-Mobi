@@ -249,6 +249,73 @@ decode-text-record: func[
 	][	decompress-palmdoc/part rec len ]
 ]
 
+compress-palmdoc: function [
+	"Compress data using PalmDOC (LZ77) compression"
+	data [binary!] "Uncompressed data (one text record, usually 4096 bytes)"
+][
+	out: make binary! length? data
+	end: length? data
+	i: 0 ;; zero based position in the input
+	while [i < end][
+		;; try to find the longest (3-10 bytes) repeated sequence in the previous 2047 bytes
+		n: min 10 (end - i)
+		if i > 0 [
+			start: max 0 (i - 2047)
+			while [n >= 3][
+				;; only match starts before the current position are searched
+				;; (the match may overlap it, which the decoder handles)
+				if pos: find/part at data (start + 1) (copy/part at data (i + 1) n) (i - start) [
+					break
+				]
+				-- n
+			]
+		]
+		either all [n >= 3  pos][
+			;; length-distance pair: 2 bits 10, 11 bits distance, 3 bits length - 3
+			code: 2#1000000000000000 | ((i + 1 - index? pos) << 3) | (n - 3)
+			append append out (code >> 8) (code & 255)
+			i: i + n
+		][
+			byte: data/(i + 1)
+			case [
+				;; space followed by a char in range 0x40-0x7F
+				all [
+					byte == 32
+					i + 1 < end
+					next-byte: data/(i + 2)
+					next-byte >= 2#01000000
+					next-byte <= 2#01111111
+				][
+					append out (next-byte | 2#10000000)
+					i: i + 2
+				]
+				;; literal byte
+				any [byte == 0  all [byte > 8  byte <= 2#01111111]][
+					append out byte
+					++ i
+				]
+				'else [
+					;; 1-8 bytes which must be copied as they are
+					j: i + 1
+					while [
+						all [
+							j < end
+							j - i < 8
+							byte: data/(j + 1)
+							not any [byte == 0  all [byte > 8  byte <= 2#01111111]]
+						]
+					][	++ j ]
+					append out (j - i)
+					append/part out at data (i + 1) (j - i)
+					i: j
+				]
+			]
+		]
+		pos: none
+	]
+	out
+]
+
 trailing-entries-size: function [
 	"Returns size of the extra data at the end of a text record"
 	rec   [binary!]  "Text record data"
