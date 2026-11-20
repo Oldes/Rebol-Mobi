@@ -52,6 +52,17 @@ check "record span none"    none? record-span recs 0#FFFFFFFF
 check "record span negative" none? record-span recs -1
 check "record span no index" none? record-span recs none
 
+read-mobi-header: :system/modules/mobi/read-mobi-header
+hdr: binary 252
+repeat i 63 [binary/write hdr [ui32 :i]] ;; 252 bytes of UI32 values 1, 2, 3...
+hdr: hdr/buffer
+m: read-mobi-header hdr 260
+check "mobi header full"   all [m/type = 1  m/indx-index = 56  m/boundary-offset = 63]
+m: read-mobi-header copy/part hdr 220 228
+check "mobi header 228"    all [m/srcs-index = 51  none? m/indx-index  none? m/boundary-offset]
+m: read-mobi-header copy/part hdr 108 116
+check "mobi header 116"    all [m/exth-flags = 27  none? m/unknown-1  none? m/srcs-index  m/extra-flags = 0]
+
 decode-text-record: :system/modules/mobi/decode-text-record
 check-compression:  :system/modules/mobi/check-compression
 check "record uncompressed" #{0102C1} = decode-text-record #{01 02 C1 FF} 3 1

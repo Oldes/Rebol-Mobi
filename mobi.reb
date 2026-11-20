@@ -54,7 +54,9 @@ register-codec [
 		][
 			;; MOBI header....
 			length: binary/read bin 'UI32
-			result/mobi: read-mobi-header bin length
+			size: length - 8
+			binary/read bin [hdr: BYTES :size]
+			result/mobi: read-mobi-header hdr length
 			;? result/mobi
 			bin/buffer: atz head bin/buffer (record0-offset + 16 + length)
 			if 0#45585448 == binary/read bin 'UI32 [
@@ -389,7 +391,11 @@ read-pdb-header: func[bin /local pdb][
 	pdb
 ]
 
-read-mobi-header: func[bin length /local mobi][
+read-mobi-header: func[
+	hdr    [binary!]  "MOBI header data (after its identifier and length)"
+	length [integer!] "MOBI header length (including its identifier and length)"
+	/local mobi spec ofs size words
+][
 	mobi: construct [
 		type:            ;; The kind of Mobipocket file
 		encoding:        ;; 1252 = CP1252 (WinLatin1); 65001 = UTF-8
@@ -447,7 +453,7 @@ read-mobi-header: func[bin length /local mobi][
 		unknown-13:      ;; Unknown	0 In new MOBI file, the MOBI header length is 256, skip this to EXTH header, MOBI Header length 256, and add 12 bytes from PalmDOC Header so this index is 268.
 		boundary-offset: ;; BOUNDARY Record Offset
 	]
-	set mobi binary/read bin compose [
+	spec: [
 		UI32     ;; type
 		UI32     ;; encoding
 		UI32     ;; unique-id
@@ -496,18 +502,28 @@ read-mobi-header: func[bin length /local mobi][
 		UI32     ;; unknown-7
 		UI32     ;; extra-flags
 		UI32     ;; indx-index
-		(either/only length > 232 [
-			UI32 ;; unknown-8
-			UI32 ;; unknown-9
-			UI32 ;; unknown-10
-			UI32 ;; unknown-11
-			UI32 ;; unknown-12
-			UI32 ;; unknown-13
-		][])
-		(either/only length > 252 [
-			UI32 ;; boundary-offset
-		][])
+		UI32     ;; unknown-8
+		UI32     ;; unknown-9
+		UI32     ;; unknown-10
+		UI32     ;; unknown-11
+		UI32     ;; unknown-12
+		UI32     ;; unknown-13
+		UI32     ;; boundary-offset
 	]
+	;; pad the data, so all known fields can be read even from a shorter header
+	if 252 > length? hdr [hdr: append/dup copy hdr 0 252 - length? hdr]
+	set mobi binary/read hdr spec
+	;; fields which are not part of the header are not valid
+	ofs: 8 ;; identifier and length
+	words: words-of mobi
+	parse spec [any [
+		[  'UI16 (size: 2) | 'UI32 (size: 4) | 'UI64 (size: 8) | 'BYTES set size integer! ]
+		(
+			ofs: ofs + size
+			if ofs > length [set in mobi words/1 none]
+			words: next words
+		)
+	]]
 	;; Extra record data flags are valid only for version 5+ with long enough header.
 	;; Only the lower 16 bits are used.
 	mobi/extra-flags: either all [length >= 0#E4 mobi/file-version >= 5][
@@ -591,7 +607,7 @@ sys/make-scheme [
 					24 <= (records/4 - records/1)
 					id == 0#4D4F4249 ;= MOBI
 				][
-					buffer: read/part file length
+					buffer: read/part file length - 8
 					mobi: read-mobi-header buffer length
 					buffer:  read/seek/part file (records/1 + 16 + length) 12
 					binary/read buffer [id: UI32 length: UI32 count: UI32]
