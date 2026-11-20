@@ -126,7 +126,7 @@ binary/write tmp: copy #{} [
 	UI16 0 UI16 0 UI32 0 UI32 0 UI32 0 UI32 0 UI32 0 UI32 0
 	BYTES #{54455874} BYTES #{52454164} UI32 0 UI32 0 UI16 3 ;; TEXt REAd, 3 records
 	UI32 104 UI32 0  UI32 120 UI32 1  UI32 125 UI32 2  UI16 0
-	UI16 1 UI16 0 UI32 5 UI16 1 UI16 4096 UI32 0 ;; uncompressed, 5 bytes in 1 record
+	UI16 1 UI16 0 UI32 5 UI16 1 UI16 4096 UI32 0#00020000 ;; uncompressed, 5 bytes in 1 record, reading position (not encryption!)
 	BYTES #{48656C6C6F} BYTES #{E98E0D0A}        ;; "Hello" + end record
 ]
 append plain tmp

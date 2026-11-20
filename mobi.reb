@@ -46,7 +46,6 @@ register-codec [
 		result/pdb: read-pdb-header bin
 		;? result/pdb
 		check-compression result/pdb/compression
-		check-encryption  result/pdb/encryption
 
 		;; plain PalmDOC files have no MOBI header (record 0 has only the PDB header)
 		if all [
@@ -69,6 +68,9 @@ register-codec [
 				result/exth: read-exth-header bin count result/mobi/encoding
 			]
 		]
+
+		;; encryption type is valid only in MOBI files
+		if result/mobi [check-encryption result/pdb/encryption]
 
 		try [
 			bin/buffer: atz head bin/buffer (record0-offset + result/mobi/fullname-offset)
@@ -480,19 +482,22 @@ read-palm-records: func[bin [handle! object! binary!] count [integer!] /local re
 read-pdb-header: func[bin /local pdb][
 	pdb: construct [
 		compression: ;; 1 == no compression, 2 = PalmDOC compression, 17480 = HUFF/CDIC compression
-		encryption:  ;; 0 = none, 1 = old Mobipocket, 2 = Mobipocket (DRM)
+		unused:      ;; Always zero
 		text-length: ;; Uncompressed length of the entire text of the book
 		records:     ;; Number of PDB records used for the text of the book.
 		record-size: ;; Maximum size of each record containing text, always 4096
-		position:    ;; Current reading position, as an offset into the uncompressed text
+		encryption:  ;; MOBI only: 0 = none, 1 = old Mobipocket, 2 = Mobipocket (DRM)
+		unknown:     ;; MOBI only
+		;; (in plain PalmDOC files, the encryption and unknown fields are the current reading position)
 	]
 	set pdb binary/read bin [
 		UI16         ;; compression
-		UI16         ;; encryption
+		UI16         ;; unused
 		UI32         ;; text-length
 		UI16         ;; records
 		UI16         ;; record-size
-		UI32         ;; position
+		UI16         ;; encryption
+		UI16         ;; unknown
 	]
 	pdb
 ]
@@ -819,7 +824,8 @@ sys/make-scheme [
 			][
 				;; Decompress the text...
 				check-compression state/pdb/compression
-				check-encryption  state/pdb/encryption
+				;; encryption type is valid only in MOBI files
+				if state/mobi [check-encryption state/pdb/encryption]
 				file: port/parent
 				limit: either part [length][state/pdb/text-length]
 				text: make binary! limit
