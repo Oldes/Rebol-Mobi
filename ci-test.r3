@@ -91,6 +91,7 @@ foreach [file url] [
 		check "query set-words" (reduce [quote Name: data/name]) == query book [Name:]
 		check "query get-words" (reduce [data/name]) == query book [:Name]
 		check "query invalid"   error? try [query book string!]
+		check "query Image"     data/image == query book 'Image
 		;; when text is needed, use READ on the port...
 		text: read book
 		? text ;print text
@@ -106,6 +107,9 @@ foreach [file url] [
 		check "scheme read after read/part" data/text == read book
 		check "scheme read/part (cached)"  (copy/part data/text 100) == read/part book 100
 		check "scheme read/string (cached)" (to string! data/text) == read/string book
+		;; without the full name, the name from the Palm header is used
+		book/state/name: none
+		check "query Name fallback" data/palm/name == query book 'Name
 		close book
 	][
 		print as-purple "*** Failed to decode a book!"

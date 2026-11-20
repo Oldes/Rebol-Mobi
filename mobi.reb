@@ -580,21 +580,27 @@ sys/make-scheme [
 			port/state: port/parent: none
 			port
 		]
-		pick: func[port [port!] index /local ofs bin rec][
-			unless object? port/state [return none]
+		pick: func[port [port!] index /local state ofs rec][
+			unless object? state: port/state [return none]
 			case [
-				index = 'Name [ any [port/state/name port/pdb/name] ]
+				index = 'Name [ any [state/name state/palm/name] ]
 				index = 'Image [
-					try/with [
-						if ofs: port/state/mobi/image-index [
-							rec: skip port/state/records 3 * :ofs
-							if 4 > length? rec [
-								sys/log/more 'MOBI "image-index value out of range!"
-								return none	
+					any [
+						state/image
+						try/with [
+							all [
+								ofs: state/mobi/image-index
+								;; the image record must have a following record (its end)
+								ofs < ((length? state/records) / 3 - 1)
+								rec: skip head state/records 3 * ofs
+								state/image: decode-image read/seek/part port/parent rec/1 (rec/4 - rec/1)
 							]
-							port/state/image: decode-image read/seek/part rec/1 (rec/4 - rec/1)
+						][
+							sys/log/error 'MOBI "Failed to decode image using image-index value!"
+							sys/log/error 'MOBI system/state/last-error
+							none
 						]
-					][none]
+					]
 				]
 				'else [
 					select port/state/exth :index
