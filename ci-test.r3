@@ -43,6 +43,15 @@ check "trailing both"       4 = trailing-entries-size #{41 42 43 61 01 AA 82} 7 
 check "trailing two"        2 = trailing-entries-size #{41 42 43 81 81} 5 6
 check "trailing long"     130 = trailing-entries-size append append/dup #{} 0 128 #{81 02} 130 2
 
+record-span: :system/modules/mobi/record-span
+recs: [0 0 0  100 0 1  150 0 2]
+check "record span"         [100 50] = record-span recs 1
+check "record span first"   [0 100]  = record-span next recs 0
+check "record span last"    none? record-span recs 2  ;; no following record
+check "record span none"    none? record-span recs 0#FFFFFFFF
+check "record span negative" none? record-span recs -1
+check "record span no index" none? record-span recs none
+
 decode-text-record: :system/modules/mobi/decode-text-record
 check-compression:  :system/modules/mobi/check-compression
 check "record uncompressed" #{0102C1} = decode-text-record #{01 02 C1 FF} 3 1

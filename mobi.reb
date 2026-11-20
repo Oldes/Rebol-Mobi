@@ -72,30 +72,28 @@ register-codec [
 			result/name: to string! trim/tail copy/part bin/buffer result/mobi/fullname-length
 		]
 
-		try [if result/mobi/srcs-index [
-			records: skip head records 3 * result/mobi/srcs-index
-			ofs: records/1
-			len: records/4 - ofs
-			binary/read bin [ATz :ofs srcs: UI32]
-			if srcs = 0#53524353 [
-				binary/read bin [UI32 UI32 UI32]
-				result/srcs: srcs: binary/read bin (len - 16)
-				try [result/srcs: system/codecs/zip/decode srcs]
+		try/with [
+			if span: record-span records all [result/mobi result/mobi/srcs-index] [
+				set [ofs len] span
+				binary/read bin [ATz :ofs srcs: UI32]
+				if srcs = 0#53524353 [
+					binary/read bin [UI32 UI32 UI32]
+					result/srcs: srcs: binary/read bin (len - 16)
+					try [result/srcs: system/codecs/zip/decode srcs]
+				]
 			]
-			
-		]]
+		][
+			sys/log/error 'MOBI "Failed to read SRCS record!"
+			sys/log/error 'MOBI system/state/last-error
+		]
 
-		try/with [if all [result/mobi result/mobi/image-index] [
-			records: skip head records 3 * result/mobi/image-index
-			either 4 > length? records [
-				sys/log/more 'MOBI "image-index value out of range!"
-			][
-				ofs: records/1
-				len: records/4 - ofs
+		try/with [
+			if span: record-span records all [result/mobi result/mobi/image-index] [
+				set [ofs len] span
 				binary/read bin [ATz :ofs image: BYTES :len]
 				result/image: decode-image image
 			]
-		]] [
+		][
 			sys/log/error 'MOBI "Failed to decode image using image-index value!"
 			sys/log/error 'MOBI system/state/last-error
 		]
@@ -173,6 +171,21 @@ decompress-palmdoc: function[
 		]
 	]
 	out
+]
+
+record-span: func[
+	"Returns offset and length of a PDB record, or none if the record index is not valid"
+	records [block!] "Record list (offset, attributes and ID for each record)"
+	index   [integer! none!] "Record number (0xFFFFFFFF means none)"
+][
+	all [
+		index
+		index >= 0
+		;; a record ends where the following one starts
+		index < ((length? head records) / 3 - 1)
+		records: skip head records 3 * index
+		reduce [records/1  records/4 - records/1]
+	]
 ]
 
 check-compression: func[
@@ -607,7 +620,7 @@ sys/make-scheme [
 			port/state: port/parent: none
 			port
 		]
-		pick: func[port [port!] index /local state ofs rec][
+		pick: func[port [port!] index /local state span][
 			unless object? state: port/state [return none]
 			case [
 				index = 'Name [ any [state/name state/palm/name] ]
@@ -615,12 +628,8 @@ sys/make-scheme [
 					any [
 						state/image
 						try/with [
-							all [
-								ofs: state/mobi/image-index
-								;; the image record must have a following record (its end)
-								ofs < ((length? state/records) / 3 - 1)
-								rec: skip head state/records 3 * ofs
-								state/image: decode-image read/seek/part port/parent rec/1 (rec/4 - rec/1)
+							if span: record-span state/records all [state/mobi state/mobi/image-index] [
+								state/image: decode-image read/seek/part port/parent span/1 span/2
 							]
 						][
 							sys/log/error 'MOBI "Failed to decode image using image-index value!"
