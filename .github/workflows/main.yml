@@ -20,10 +20,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rebol for the test
-      uses: oldes/install-rebol@v3.17.0
+      uses: oldes/install-rebol@v3.22.1
       with:
         product: Bulk
     

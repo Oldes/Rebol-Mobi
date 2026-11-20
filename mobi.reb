@@ -3,7 +3,7 @@ Rebol [
 	Type:    module
 	Name:    mobi
 	Date:    20-Nov-2026
-	Version: 0.2.0
+	Version: 1.0.0
 	Author:  @Oldes
 	Home:    https://github.com/Oldes/Rebol-Mobi
 	Rights:  MIT
@@ -11,7 +11,7 @@ Rebol [
 	History: [
 		25-Jun-2024 @Oldes {Initial version}
 		14-Jul-2024 @Oldes {Included initial MOBI scheme}
-		20-Nov-2026 @Oldes {Code review}
+		20-Nov-2026 @Oldes {Code review; encoder}
 	]
 	Notes: {
 		The MOBI file format is closed source, so there is no public documentation.
