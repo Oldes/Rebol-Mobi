@@ -509,17 +509,6 @@ decode-image: func[image][
 	]
 ]
 
-default-query-mode: [
-	Name:
-	Author:
-	Publishingdate:
-	Isbn:
-	Publisher:
-	Rights:
-	Source:
-	Description:
-]
-
 default-state: [
 	palm:
 	pdb:
@@ -612,28 +601,41 @@ sys/make-scheme [
 				]
 			]
 		]
-		query: func[port [port!] /mode field [word! block! none!] /local close? out p w][
+		query: func[port [port!] field [word! block! datatype!] /local close? out p w k v][
 			unless open? port [port: open port close?: true]
-			unless mode [field: :default-query-mode]
 			case [
 				word?  field [
 					out: pick port field
 				]
 				block? field [
-					parse out: copy field [
-						any [
-							  p: set w [word! | get-word!] (change p pick port w)
-							| set w set-word! p: (p: insert p pick port w) :p
-							| skip
+					;; words => set-word/value pairs; get-words => values only
+					out: make block! 2 * length? field
+					foreach w field [
+						case [
+							any [word? :w set-word? :w][
+								repend out [to set-word! w  pick port to word! w]
+							]
+							get-word? :w [
+								append/only out pick port to word! w
+							]
 						]
 					]
-					out
+					new-line/skip out true 2
+				]
+				object! == field [
+					;; all available fields; repeated EXTH records are collected in a block
+					out: reduce [quote Name: pick port 'Name]
+					foreach [i k v] any [port/state/exth []] [
+						k: to set-word! k
+						either p: find/skip out k 2 [
+							either block? p/2 [append/only p/2 v][p/2: reduce [p/2 v]]
+						][	repend out [k v] ]
+					]
+					out: construct out
 				]
 				'else [
-					;; requested list of available fields
-					out: make block! (length? port/state/exth) / 3
-					foreach [i k v] port/state/exth [ append out to set-word! k ]
-					new-line/all out true
+					if close? [close port]
+					cause-error 'script 'invalid-arg field
 				]
 			]
 			if close? [close port]

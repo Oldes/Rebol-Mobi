@@ -84,7 +84,13 @@ foreach [file url] [
 	try/with [
 		book: open [scheme: 'mobi path: file]
 		;; all metadata should be decoded when the port is opened...
-		probe query book object!
+		probe info: query book object!
+		check "query object!"   all [object? info  info/Name == data/name]
+		check "query word"      data/name == query book 'Name
+		check "query words"     (reduce [quote Name: data/name]) == query book [Name]
+		check "query set-words" (reduce [quote Name: data/name]) == query book [Name:]
+		check "query get-words" (reduce [data/name]) == query book [:Name]
+		check "query invalid"   error? try [query book string!]
 		;; when text is needed, use READ on the port...
 		text: read book
 		? text ;print text

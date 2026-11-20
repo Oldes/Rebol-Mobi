@@ -27,7 +27,7 @@ Instead of trying to decode everything as in the code above, it is possible to u
 book: open [scheme: 'mobi path: %path/to/book.mobi]
 
 ;; get all metadata:
-meta: query book
+meta: query book object!
 
 ;; get complete text:
 text: read/string book
