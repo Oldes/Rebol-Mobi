@@ -2,8 +2,8 @@ Rebol [
 	Title:  "Codec: MOBI"
 	Type:    module
 	Name:    mobi
-	Date:    14-Jul-2024
-	Version: 0.1.0
+	Date:    20-Nov-2026
+	Version: 0.2.0
 	Author:  @Oldes
 	Home:    https://github.com/Oldes/Rebol-Mobi
 	Rights:  MIT
@@ -11,6 +11,7 @@ Rebol [
 	History: [
 		25-Jun-2024 @Oldes {Initial version}
 		14-Jul-2024 @Oldes {Included initial MOBI scheme}
+		20-Nov-2026 @Oldes {Code review}
 	]
 	Notes: {
 		The MOBI file format is closed source, so there is no public documentation.
@@ -19,7 +20,7 @@ Rebol [
 		* https://metacpan.org/dist/EBook-Tools/source/lib/EBook/Tools/PalmDoc.pm
 		* https://github.com/ywzhaiqi/MyKindleTools/tree/master/kindleunpack
 	}
-	Needs: 3.11.0 ;; used hexadecimal and bit integer notation
+	Needs: 3.16.0 ;; used hexadecimal and bit integer notation
 ]
 
 system/options/log/mobi: 1
@@ -100,12 +101,15 @@ register-codec [
 		;; Decompress the text...
 		result/text: make binary! result/pdb/text-length
 		records: skip head records 3 ; * result/mobi/first-content
+		flags: any [all [result/mobi result/mobi/extra-flags] 0]
 		sys/log/debug 'MOBI ["Trying to decode text from" result/pdb/records "records"]
 		loop result/pdb/records [
 			ofs: records/1
 			len: records/4 - ofs
 			buffer: atz head bin/buffer :ofs
-			append/part result/text decompress-palmdoc/part :buffer :len 4096
+			;; ignore extra data at the end of the record
+			len: len - trailing-entries-size :buffer :len :flags
+			append result/text decompress-palmdoc/part :buffer :len
 			records: skip records 3
 		]
 		;while [not tail? records: skip records 3] [		
@@ -117,13 +121,17 @@ register-codec [
 	]
 ]
 
-decompress-palmdoc: function[bin [binary!] /part limit [integer!]][
+decompress-palmdoc: function[
+	"Decompress PalmDOC (LZ77) compressed data"
+	bin [binary!]
+	/part limit [integer!] "Number of input bytes to process"
+][
 	out: clear #{}
-	end: either limit [limit + index? bin][length? bin]
+	;; absolute index past the last input byte (bin may not be at its head)
+	end: either limit [limit + index? bin][index? tail bin]
 	while [end > index? bin][
 		byte: bin/1
 		++ bin
-		if end == index? bin [break]
 		case [
 
 			byte == 0 [append out 0]
@@ -161,9 +169,42 @@ decompress-palmdoc: function[bin [binary!] /part limit [integer!]][
 				append append out SP (byte xor 2#10000000)
 			]
 		]
-		if 4096 <= length? out [break]
 	]
 	out
+]
+
+trailing-entries-size: function [
+	"Returns size of the extra data at the end of a text record"
+	rec   [binary!]  "Text record data"
+	size  [integer!] "Text record size"
+	flags [integer!] "Extra record data flags from the MOBI header"
+][
+	;; Each set bit (except the lowest one) means one trailing entry,
+	;; which ends with its size stored as a backward variable-width integer.
+	num: 0
+	test: flags >> 1
+	while [test > 0][
+		if 1 == (test & 1) [
+			pos: size - num
+			bits: val: 0
+			while [pos > 0][
+				byte: rec/:pos
+				val: val | ((byte & 2#01111111) << bits)
+				bits: bits + 7
+				-- pos
+				if any [0 <> (byte & 2#10000000)  bits >= 28][break]
+			]
+			num: num + val
+		]
+		test: test >> 1
+	]
+	;; The lowest bit means multibyte character overlap data;
+	;; its length is stored in the 2 lowest bits of the last byte (plus 1).
+	if all [1 == (flags & 1) size > num][
+		pos: size - num
+		num: num + 1 + (rec/:pos & 2#11)
+	]
+	num
 ]
 
 EXTH_RECORD_TYPE: make map! [
@@ -280,7 +321,7 @@ read-palm-header: func[bin /local palm][
 	]
 	palm
 ]
-read-palm-records: func[bin [object! binary! handle!] count [integer!] /local records][
+read-palm-records: func[bin [handle! object! binary!] count [integer!] /local records][
 	if binary? bin [bin: binary bin]
 	records: make block! 3 * count
 	loop count [
@@ -432,6 +473,11 @@ read-mobi-header: func[bin length /local mobi][
 			UI32 ;; boundary-offset
 		][])
 	]
+	;; Extra record data flags are valid only for version 5+ with long enough header.
+	;; Only the lower 16 bits are used.
+	mobi/extra-flags: either all [length >= 0#E4 mobi/file-version >= 5][
+		mobi/extra-flags & 0#FFFF
+	][	0 ]
 	mobi
 ]
 
@@ -449,7 +495,7 @@ read-exth-header: func[bin count /local exth type len data spec verbose?][
 		data: binary/read bin len - 8
 		spec: any [select EXTH_RECORD_TYPE type [binary! Unknown]]
 		data: reduce [type  spec/2  to get spec/1 data]
-		if verbose? [ sys/log/debug 'MOBI format [-4 SP 22 ": "] data ]
+		if verbose? [ sys/log/debug 'MOBI format [-4 SP 22 ": "] [data/1 data/2 data/3] ]
 		append exth new-line data true
 	]
 	exth
@@ -597,7 +643,7 @@ sys/make-scheme [
 			port [port!]
 			/part length [integer!]
 			/string
-			/local close? state file text pdb records buffer
+			/local close? state file text pdb records buffer len flags
 			;@@ TODO: improve so `read` may be used to stream the data from an opened port!
 		][
 			unless open? port [port: open port close?: true]
@@ -608,10 +654,14 @@ sys/make-scheme [
 			unless length [length: state/pdb/text-length]
 			text: make binary! length
 			records: skip head state/records 3
+			flags: any [all [state/mobi state/mobi/extra-flags] 0]
 			sys/log/debug 'MOBI ["Trying to decode text from" state/pdb/records "records"]
 			loop state/pdb/records [
-				buffer: read/seek/part file records/1 (records/4 - records/1)
-				append text decompress-palmdoc buffer
+				len: records/4 - records/1
+				buffer: read/seek/part file records/1 len
+				;; ignore extra data at the end of the record
+				len: len - trailing-entries-size buffer len flags
+				append text decompress-palmdoc/part buffer len
 				records: skip records 3
 				if all [length < length? text][ break ]
 			]
