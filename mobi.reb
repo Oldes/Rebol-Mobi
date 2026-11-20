@@ -280,7 +280,7 @@ read-palm-header: func[bin /local palm][
 	]
 	palm
 ]
-read-palm-records: func[bin [object! binary!] count [integer!] /local records][
+read-palm-records: func[bin [object! binary! handle!] count [integer!] /local records][
 	if binary? bin [bin: binary bin]
 	records: make block! 3 * count
 	loop count [
