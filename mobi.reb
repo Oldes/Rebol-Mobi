@@ -643,33 +643,36 @@ sys/make-scheme [
 			port [port!]
 			/part length [integer!]
 			/string
-			/local close? state file text pdb records buffer len flags
+			/local close? state file text pdb records buffer len flags limit
 			;@@ TODO: improve so `read` may be used to stream the data from an opened port!
 		][
 			unless open? port [port: open port close?: true]
-			;; Decompress the text...
-			file: port/parent
 			unless state: port/state [return none]
-			if binary? state/text [return state/text]
-			unless length [length: state/pdb/text-length]
-			text: make binary! length
-			records: skip head state/records 3
-			flags: any [all [state/mobi state/mobi/extra-flags] 0]
-			sys/log/debug 'MOBI ["Trying to decode text from" state/pdb/records "records"]
-			loop state/pdb/records [
-				len: records/4 - records/1
-				buffer: read/seek/part file records/1 len
-				;; ignore extra data at the end of the record
-				len: len - trailing-entries-size buffer len flags
-				append text decompress-palmdoc/part buffer len
-				records: skip records 3
-				if all [length < length? text][ break ]
+			either binary? state/text [
+				text: state/text
+			][
+				;; Decompress the text...
+				file: port/parent
+				limit: either part [length][state/pdb/text-length]
+				text: make binary! limit
+				records: skip head state/records 3
+				flags: any [all [state/mobi state/mobi/extra-flags] 0]
+				sys/log/debug 'MOBI ["Trying to decode text from" state/pdb/records "records"]
+				loop state/pdb/records [
+					len: records/4 - records/1
+					buffer: read/seek/part file records/1 len
+					;; ignore extra data at the end of the record
+					len: len - trailing-entries-size buffer len flags
+					append text decompress-palmdoc/part buffer len
+					records: skip records 3
+					if limit <= length? text [ break ]
+				]
+				;; cache only the complete text
+				unless part [state/text: text]
 			]
-			if part [clear atz text length] 
-			state/text: text
+			if part [text: copy/part text length]
 			if close? [close port]
-			if string [text: to string! text]
-			text
+			either string [to string! text][text]
 		]
 	]
 ]

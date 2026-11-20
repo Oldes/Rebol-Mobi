@@ -94,9 +94,17 @@ foreach [file url] [
 			print as-purple "*** Scheme text differs from the codec text!"
 			quit/return -6
 		]
+		;; read refinements must work with the cached text
+		book: open [scheme: 'mobi path: file]
+		check "scheme read/part"           (copy/part data/text 100) == read/part book 100
+		check "scheme read after read/part" data/text == read book
+		check "scheme read/part (cached)"  (copy/part data/text 100) == read/part book 100
+		check "scheme read/string (cached)" (to string! data/text) == read/string book
+		close book
 	][
 		print as-purple "*** Failed to decode a book!"
 		print system/state/last-error
 		quit/return -3
 	]
 ]
+if failed? [quit/return -7]
