@@ -32,7 +32,7 @@ register-codec [
 	suffixes: [%.mobi %.azw]
 
 	decode: function [
-		{Extract content of the AR/LIB file}
+		{Decode content of the MOBI file}
 		data  [binary! file! url!]
 		;return: [object!]
 	][
@@ -46,6 +46,7 @@ register-codec [
 		result/pdb: read-pdb-header bin
 		;? result/pdb
 		check-compression result/pdb/compression
+		check-encryption  result/pdb/encryption
 
 		;; plain PalmDOC files have no MOBI header (record 0 has only the PDB header)
 		if all [
@@ -65,13 +66,13 @@ register-codec [
 					length: UI32
 					count:  UI32 ;; The number of records in the EXTH header.
 				]
-				result/exth: read-exth-header bin count
+				result/exth: read-exth-header bin count result/mobi/encoding
 			]
 		]
 
 		try [
 			bin/buffer: atz head bin/buffer (record0-offset + result/mobi/fullname-offset)
-			result/name: to string! trim/tail copy/part bin/buffer result/mobi/fullname-length
+			result/name: decode-text trim/tail copy/part bin/buffer result/mobi/fullname-length result/mobi/encoding
 		]
 
 		try/with [
@@ -90,7 +91,7 @@ register-codec [
 		]
 
 		try/with [
-			if span: record-span records all [result/mobi result/mobi/image-index] [
+			if span: record-span records cover-index result/mobi result/exth [
 				set [ofs len] span
 				binary/read bin [ATz :ofs image: BYTES :len]
 				result/image: decode-image image
@@ -153,8 +154,11 @@ decompress-palmdoc: function[
 				;; in theory you can be referring to characters you haven't
 				;; actually decompressed yet.
 				wpos: length? out
+				if any [distance == 0  distance > wpos][
+					do make error! "[MOBI] Invalid PalmDOC data (distance out of range)"
+				]
 				rpos: wpos - distance
-				either wpos > (rpos + length) [
+				either wpos >= (rpos + length) [
 					;; All chars are already available, so just copy all at once
 					append/part out atz out :rpos :length
 				][
@@ -175,6 +179,14 @@ decompress-palmdoc: function[
 	out
 ]
 
+decode-text: func[
+	"Converts text data to a string using the MOBI text encoding"
+	data     [binary!]
+	encoding [integer! none!] "1252 = CP1252; 65001 (or none) = UTF-8"
+][
+	either encoding == 1252 [iconv data 1252][to string! data]
+]
+
 record-span: func[
 	"Returns offset and length of a PDB record, or none if the record index is not valid"
 	records [block!] "Record list (offset, attributes and ID for each record)"
@@ -190,12 +202,39 @@ record-span: func[
 	]
 ]
 
+cover-index: func[
+	"Returns record number of the cover image (the first image, if the cover is not specified)"
+	mobi [object! none!]
+	exth [block! none!]
+	/local index cover
+][
+	all [
+		mobi
+		index: mobi/image-index
+		index <> 0#FFFFFFFF
+		either all [
+			exth
+			cover: select exth 'Coveroffset
+			cover <> 0#FFFFFFFF
+		][	index + cover ][ index ]
+	]
+]
+
 check-compression: func[
 	"Throws an error if the text compression type is not supported"
 	type [integer!] "1 = no compression, 2 = PalmDOC, 17480 = HUFF/CDIC"
 ][
 	unless find [1 2] type [
 		do make error! ajoin ["[MOBI] Unsupported compression type: " type]
+	]
+]
+
+check-encryption: func[
+	"Throws an error if the text is encrypted (DRM protected)"
+	type [integer!] "0 = none, 1 = old Mobipocket, 2 = Mobipocket"
+][
+	unless zero? type [
+		do make error! ajoin ["[MOBI] Encrypted (DRM protected) text is not supported; encryption type: " type]
 	]
 ]
 
@@ -374,7 +413,7 @@ read-palm-records: func[bin [handle! object! binary!] count [integer!] /local re
 read-pdb-header: func[bin /local pdb][
 	pdb: construct [
 		compression: ;; 1 == no compression, 2 = PalmDOC compression, 17480 = HUFF/CDIC compression
-		unused:      ;; Always zero
+		encryption:  ;; 0 = none, 1 = old Mobipocket, 2 = Mobipocket (DRM)
 		text-length: ;; Uncompressed length of the entire text of the book
 		records:     ;; Number of PDB records used for the text of the book.
 		record-size: ;; Maximum size of each record containing text, always 4096
@@ -382,7 +421,7 @@ read-pdb-header: func[bin /local pdb][
 	]
 	set pdb binary/read bin [
 		UI16         ;; compression
-		UI16         ;; unused
+		UI16         ;; encryption
 		UI32         ;; text-length
 		UI16         ;; records
 		UI16         ;; record-size
@@ -532,7 +571,7 @@ read-mobi-header: func[
 	mobi
 ]
 
-read-exth-header: func[bin count /local exth type len data spec verbose?][
+read-exth-header: func[bin count encoding /local exth type len data spec verbose?][
 	if binary? bin [bin: binary bin]
 	;; The EXTH header consists of repeated EXTH records to the end of the EXTH length.
 	exth: make block! 3 * count
@@ -545,7 +584,7 @@ read-exth-header: func[bin count /local exth type len data spec verbose?][
 		]
 		data: binary/read bin len - 8
 		spec: any [select EXTH_RECORD_TYPE type [binary! Unknown]]
-		data: reduce [type  spec/2  to get spec/1 data]
+		data: reduce [type  spec/2  either spec/1 == 'string! [decode-text data encoding][to get spec/1 data]]
 		if verbose? [ sys/log/debug 'MOBI format [-4 SP 22 ": "] [data/1 data/2 data/3] ]
 		append exth new-line data true
 	]
@@ -613,11 +652,11 @@ sys/make-scheme [
 					binary/read buffer [id: UI32 length: UI32 count: UI32]
 					if id == 0#45585448 [ ;= EXTH
 						buffer: read/part file length
-						exth: read-exth-header buffer count
+						exth: read-exth-header buffer count mobi/encoding
 					]
 				]
 				try [
-					name: to string! trim/tail read/seek/part file (records/1 + mobi/fullname-offset) mobi/fullname-length
+					name: decode-text trim/tail read/seek/part file (records/1 + mobi/fullname-offset) mobi/fullname-length mobi/encoding
 				]
 				sys/log/info 'MOBI ["Opened book: " as-yellow any [name palm/name]]
 			]
@@ -644,7 +683,7 @@ sys/make-scheme [
 					any [
 						state/image
 						try/with [
-							if span: record-span state/records all [state/mobi state/mobi/image-index] [
+							if span: record-span state/records cover-index state/mobi state/exth [
 								state/image: decode-image read/seek/part port/parent span/1 span/2
 							]
 						][
@@ -713,6 +752,7 @@ sys/make-scheme [
 			][
 				;; Decompress the text...
 				check-compression state/pdb/compression
+				check-encryption  state/pdb/encryption
 				file: port/parent
 				limit: either part [length][state/pdb/text-length]
 				text: make binary! limit
@@ -733,7 +773,7 @@ sys/make-scheme [
 			]
 			if part [text: copy/part text length]
 			if close? [close port]
-			either string [to string! text][text]
+			either string [decode-text text all [state/mobi state/mobi/encoding]][text]
 		]
 	]
 ]

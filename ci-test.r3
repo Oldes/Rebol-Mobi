@@ -34,6 +34,9 @@ check "palmdoc space+char"  #{2041}     = copy decompress-palmdoc #{C1}
 check "palmdoc pair"        #{616263616263} = copy decompress-palmdoc #{61 62 63 80 18}
 ;; overlapping pair (distance 1, length 5)
 check "palmdoc overlap"     #{616161616161} = copy decompress-palmdoc #{61 80 0A}
+;; invalid pairs (distance 0, distance past the start of the output)
+check "palmdoc distance 0"  error? try [decompress-palmdoc #{61 80 00}]
+check "palmdoc distance >"  error? try [decompress-palmdoc #{61 80 10}]
 
 check "trailing none"       0 = trailing-entries-size #{41 42 43} 3 0
 check "trailing entry"      1 = trailing-entries-size #{41 42 43 81} 4 2
@@ -63,12 +66,33 @@ check "mobi header 228"    all [m/srcs-index = 51  none? m/indx-index  none? m/b
 m: read-mobi-header copy/part hdr 108 116
 check "mobi header 116"    all [m/exth-flags = 27  none? m/unknown-1  none? m/srcs-index  m/extra-flags = 0]
 
+cover-index: :system/modules/mobi/cover-index
+mobi: object [image-index: 5]
+check "cover index"         7 = cover-index mobi [201 Coveroffset 2]
+check "cover first image"   5 = cover-index mobi [100 Author "x"]
+check "cover no EXTH"       5 = cover-index mobi none
+check "cover no offset"     5 = cover-index mobi [201 Coveroffset 0#FFFFFFFF]
+check "cover no image"      none? cover-index object [image-index: 0#FFFFFFFF] [201 Coveroffset 2]
+check "cover no MOBI"       none? cover-index none none
+
+decode-text: :system/modules/mobi/decode-text
+check "decode-text CP1252"  "€é" == decode-text #{80E9} 1252
+check "decode-text UTF-8"   "€é" == decode-text #{E282AC C3A9} 65001
+check "decode-text default" "€é" == decode-text #{E282AC C3A9} none
+read-exth-header: :system/modules/mobi/read-exth-header
+exth: binary 14
+binary/write exth [UI32 100 UI32 14 BYTES #{4175746F7280}] ;; Author: "Autor€" in CP1252
+check "EXTH CP1252"  [100 Author "Autor€"] = read-exth-header exth/buffer 1 1252
+
 decode-text-record: :system/modules/mobi/decode-text-record
 check-compression:  :system/modules/mobi/check-compression
 check "record uncompressed" #{0102C1} = decode-text-record #{01 02 C1 FF} 3 1
 check "record palmdoc"      #{2041}   = copy decode-text-record #{C1 FF} 1 2
 check "compression 1 and 2" not any [error? try [check-compression 1] error? try [check-compression 2]]
 check "compression HUFF"    error? try [check-compression 17480]
+check-encryption:   :system/modules/mobi/check-encryption
+check "no encryption"       not error? try [check-encryption 0]
+check "encryption"          all [error? try [check-encryption 1] error? try [check-encryption 2]]
 
 e: try [open [scheme: 'mobi path: %missing.mobi]]
 check "open missing file"   all [error? e  e/id = 'cannot-open  e/arg1 = %missing.mobi]
