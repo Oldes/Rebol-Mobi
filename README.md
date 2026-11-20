@@ -65,6 +65,10 @@ bin: encode 'mobi object [
 ]
 write %my-book.mobi bin
 ```
+Or save the book directly (the codec is chosen by the file suffix):
+```rebol
+save %my-book.mobi object [name: "My Book" text: "<p>Hello!</p>" exth: [Author "Me"]]
+```
 The output is a MOBI 6 file with UTF-8 encoded, PalmDOC compressed text (the structure follows Calibre's MOBI writer; tested with KindleUnpack).
 The text should be HTML; it is stored as it is.
 
