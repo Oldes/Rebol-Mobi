@@ -534,11 +534,12 @@ sys/make-scheme [
 				file? path: select spec 'target []
 				file? path: select spec 'file   []
 				'else [
-					sys/log/error 'MOBI ["No source file provided in spec:" mold spec]
+					;; no source file provided in the spec
+					cause-error 'script 'invalid-arg reduce [spec]
 				]
 			]
 			unless exists? path [
-				sys/log/error 'MOBI ["Source path not found:" as-red path]
+				cause-error 'access 'cannot-open reduce [path "file not found"]
 			]
 			sys/log/info 'MOBI ["Opening file:" as-yellow mold path]
 			port/parent: file: open/read/seek :path

@@ -43,6 +43,11 @@ check "trailing both"       4 = trailing-entries-size #{41 42 43 61 01 AA 82} 7 
 check "trailing two"        2 = trailing-entries-size #{41 42 43 81 81} 5 6
 check "trailing long"     130 = trailing-entries-size append append/dup #{} 0 128 #{81 02} 130 2
 
+e: try [open [scheme: 'mobi path: %missing.mobi]]
+check "open missing file"   all [error? e  e/id = 'cannot-open  e/arg1 = %missing.mobi]
+e: try [open [scheme: 'mobi]]
+check "open without path"   all [error? e  e/id = 'invalid-arg]
+
 if failed? [quit/return -4]
 
 foreach [file url] [
